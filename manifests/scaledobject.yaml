@@ -1,0 +1,48 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: demoapp-scaler
+spec:
+  scaleTargetRef:
+    name: demoapp
+  pollingInterval: 15
+  cooldownPeriod: 30
+  minReplicaCount: 1
+  maxReplicaCount: 10
+  triggers:
+  # Scale based on RPS
+  - type: prometheus
+    metadata:
+      serverAddress: http://prometheus-kube-prometheus-prometheus.monitor.svc.cluster.local:9090
+      metricName: request_rate
+      threshold: '5'
+      query: sum(rate(app_request_count_total{endpoint!~"/metrics|/health|/prometheus"}[1m]))
+  # Scale based on latency
+  - type: prometheus
+    metadata:
+      serverAddress: http://prometheus-kube-prometheus-prometheus.monitor.svc.cluster.local:9090
+      metricName: latency
+      threshold: '0.5'
+      query: histogram_quantile(0.95, sum(rate(app_request_latency_seconds_bucket{endpoint!~"/metrics|/health|/prometheus"}[1m])) by (le))
+  # Scale based on concurrent requests
+  - type: prometheus
+    metadata:
+      serverAddress: http://prometheus-kube-prometheus-prometheus.monitor.svc.cluster.local:9090
+      metricName: concurrent_requests
+      threshold: '5'
+      query: sum(rate(app_request_count_total{endpoint="/books"}[1m]))
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: 30
+          policies:
+          - type: Percent
+            value: 100
+            periodSeconds: 15
+        scaleDown:
+          stabilizationWindowSeconds: 60
+          policies:
+          - type: Percent
+            value: 50
+            periodSeconds: 60
